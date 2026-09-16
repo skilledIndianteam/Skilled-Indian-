@@ -1,0 +1,700 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Build Skilled Indian Provider APK
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ==========================================================
+      # 1. DOWNLOAD YOUR GITHUB REPOSITORY
+      # ==========================================================
+
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+
+      # ==========================================================
+      # 2. JAVA 17
+      # ==========================================================
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+
+      # ==========================================================
+      # 3. ANDROID SDK
+      # ==========================================================
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+
+
+      # ==========================================================
+      # 4. ACCEPT ANDROID LICENSES
+      # ==========================================================
+
+      - name: Accept Android Licenses
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+
+      # ==========================================================
+      # 5. FIND ORIGINAL HTML FILE
+      #
+      # YOUR ZIP MAY HAVE:
+      #
+      # skilled-indian-provider-complete-final-v18/index.html
+      #
+      # OR:
+      #
+      # www/index.html
+      #
+      # OR:
+      #
+      # index.html
+      # ==========================================================
+
+      - name: Find Application HTML
+        shell: bash
+        run: |
+
+          set -e
+
+          echo "Searching for index.html..."
+
+          FOUND=""
+
+          if [ -f "www/index.html" ]; then
+            FOUND="www/index.html"
+          fi
+
+          if [ -z "$FOUND" ] && [ -f "index.html" ]; then
+            FOUND="index.html"
+          fi
+
+          if [ -z "$FOUND" ]; then
+            FOUND=$(find . -type f -name "index.html" \
+              -not -path "./android/*" \
+              -not -path "./.git/*" \
+              | head -n 1)
+          fi
+
+          if [ -z "$FOUND" ]; then
+
+            echo ""
+            echo "ERROR: index.html was not found."
+            echo ""
+            echo "Repository files:"
+            find . -maxdepth 5 -type f | sort
+
+            exit 1
+          fi
+
+          echo "Application found:"
+          echo "$FOUND"
+
+          echo "$FOUND" > application-path.txt
+
+
+      # ==========================================================
+      # 6. CREATE NATIVE ANDROID PROJECT
+      # ==========================================================
+
+      - name: Create Android Project
+        shell: bash
+        run: |
+
+          set -e
+
+          APP_HTML=$(cat application-path.txt)
+
+          echo "Using application:"
+          echo "$APP_HTML"
+
+          # Create Android directories
+
+          mkdir -p android/app/src/main/java/com/skilledindian/provider
+          mkdir -p android/app/src/main/res/values
+          mkdir -p android/app/src/main/res/layout
+          mkdir -p android/app/src/main/assets
+          mkdir -p android/gradle/wrapper
+
+
+      # ==========================================================
+      # 7. COPY YOUR HTML APPLICATION
+      # ==========================================================
+
+      - name: Copy Application
+        shell: bash
+        run: |
+
+          set -e
+
+          APP_HTML=$(cat application-path.txt)
+
+          cp "$APP_HTML" \
+             android/app/src/main/assets/index.html
+
+          echo "Application copied."
+
+          ls -lh \
+            android/app/src/main/assets/index.html
+
+
+      # ==========================================================
+      # 8. CREATE SETTINGS.GRADLE
+      # ==========================================================
+
+      - name: Create settings.gradle
+        shell: bash
+        run: |
+
+          cat > android/settings.gradle <<'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "SkilledIndianProvider"
+
+include(":app")
+EOF
+
+
+      # ==========================================================
+      # 9. CREATE ROOT BUILD.GRADLE
+      # ==========================================================
+
+      - name: Create Root build.gradle
+        shell: bash
+        run: |
+
+          cat > android/build.gradle <<'EOF'
+plugins {
+    id 'com.android.application' version '8.13.2' apply false
+}
+EOF
+
+
+      # ==========================================================
+      # 10. CREATE GRADLE.PROPERTIES
+      # ==========================================================
+
+      - name: Create gradle.properties
+        shell: bash
+        run: |
+
+          cat > android/gradle.properties <<'EOF'
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=false
+android.nonTransitiveRClass=true
+EOF
+
+
+      # ==========================================================
+      # 11. CREATE APP BUILD.GRADLE
+      # ==========================================================
+
+      - name: Create Android App Build Configuration
+        shell: bash
+        run: |
+
+          cat > android/app/build.gradle <<'EOF'
+plugins {
+    id 'com.android.application'
+}
+
+android {
+
+    namespace 'com.skilledindian.provider'
+
+    compileSdk 36
+
+    defaultConfig {
+
+        applicationId 'com.skilledindian.provider'
+
+        minSdk 23
+
+        targetSdk 36
+
+        versionCode 1
+
+        versionName '1.0.0'
+    }
+
+    buildTypes {
+
+        debug {
+
+            minifyEnabled false
+
+        }
+
+        release {
+
+            minifyEnabled false
+
+            shrinkResources false
+
+        }
+    }
+
+    compileOptions {
+
+        sourceCompatibility JavaVersion.VERSION_17
+
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+EOF
+
+
+      # ==========================================================
+      # 12. CREATE ANDROID MANIFEST
+      # ==========================================================
+
+      - name: Create Android Manifest
+        shell: bash
+        run: |
+
+          cat > android/app/src/main/AndroidManifest.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission
+        android:name="android.permission.INTERNET" />
+
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <uses-permission
+        android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <application
+
+        android:allowBackup="true"
+
+        android:label="@string/app_name"
+
+        android:usesCleartextTraffic="true"
+
+        android:hardwareAccelerated="true"
+
+        android:theme="@style/AppTheme">
+
+        <activity
+
+            android:name=".MainActivity"
+
+            android:exported="true"
+
+            android:screenOrientation="portrait">
+
+            <intent-filter>
+
+                <action
+                    android:name="android.intent.action.MAIN" />
+
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
+
+            </intent-filter>
+
+        </activity>
+
+    </application>
+
+</manifest>
+EOF
+
+
+      # ==========================================================
+      # 13. CREATE STRINGS.XML
+      # ==========================================================
+
+      - name: Create Strings
+        shell: bash
+        run: |
+
+          cat > android/app/src/main/res/values/strings.xml <<'EOF'
+<resources>
+
+    <string name="app_name">
+        Skilled Indian Provider
+    </string>
+
+</resources>
+EOF
+
+
+      # ==========================================================
+      # 14. CREATE COLORS.XML
+      # ==========================================================
+
+      - name: Create Colors
+        shell: bash
+        run: |
+
+          cat > android/app/src/main/res/values/colors.xml <<'EOF'
+<resources>
+
+    <color name="black">
+        #000000
+    </color>
+
+    <color name="white">
+        #FFFFFF
+    </color>
+
+</resources>
+EOF
+
+
+      # ==========================================================
+      # 15. CREATE THEME
+      # ==========================================================
+
+      - name: Create Android Theme
+        shell: bash
+        run: |
+
+          cat > android/app/src/main/res/values/themes.xml <<'EOF'
+<resources>
+
+    <style
+        name="AppTheme"
+        parent="android:style/Theme.Material.Light.NoActionBar">
+
+        <item name="android:fontFamily">
+            sans
+        </item>
+
+        <item name="android:windowActionModeOverlay">
+            true
+        </item>
+
+        <item name="android:statusBarColor">
+            #000000
+        </item>
+
+        <item name="android:navigationBarColor">
+            #000000
+        </item>
+
+        <item name="android:windowLightStatusBar">
+            false
+        </item>
+
+    </style>
+
+</resources>
+EOF
+
+
+      # ==========================================================
+      # 16. CREATE MAIN ACTIVITY
+      # ==========================================================
+
+      - name: Create MainActivity
+        shell: bash
+        run: |
+
+          cat > android/app/src/main/java/com/skilledindian/provider/MainActivity.java <<'EOF'
+package com.skilledindian.provider;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.webkit.GeolocationPermissions;
+import android.webkit.PermissionRequest;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
+public class MainActivity extends Activity {
+
+    private WebView webView;
+
+    private static final int LOCATION_PERMISSION = 1001;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+
+        super.onCreate(savedInstanceState);
+
+        webView = new WebView(this);
+
+        setContentView(webView);
+
+        WebSettings settings = webView.getSettings();
+
+        settings.setJavaScriptEnabled(true);
+
+        settings.setDomStorageEnabled(true);
+
+        settings.setDatabaseEnabled(true);
+
+        settings.setAllowFileAccess(true);
+
+        settings.setAllowContentAccess(true);
+
+        settings.setGeolocationEnabled(true);
+
+        settings.setMediaPlaybackRequiresUserGesture(false);
+
+        settings.setBuiltInZoomControls(false);
+
+        settings.setDisplayZoomControls(false);
+
+        webView.setWebViewClient(new WebViewClient());
+
+        webView.setWebChromeClient(
+            new WebChromeClient() {
+
+                @Override
+                public void onGeolocationPermissionsShowPrompt(
+                        String origin,
+                        GeolocationPermissions.Callback callback) {
+
+                    if (checkSelfPermission(
+                            Manifest.permission.ACCESS_FINE_LOCATION)
+                            != PackageManager.PERMISSION_GRANTED) {
+
+                        requestPermissions(
+                            new String[]{
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            },
+                            LOCATION_PERMISSION
+                        );
+                    }
+
+                    callback.invoke(
+                        origin,
+                        true,
+                        false
+                    );
+                }
+
+                @Override
+                public void onPermissionRequest(
+                        PermissionRequest request) {
+
+                    runOnUiThread(() -> {
+
+                        try {
+
+                            request.grant(
+                                request.getResources()
+                            );
+
+                        } catch (Exception ignored) {
+
+                        }
+
+                    });
+                }
+            }
+        );
+
+        webView.loadUrl(
+            "file:///android_asset/index.html"
+        );
+    }
+
+    @Override
+    public void onBackPressed() {
+
+        if (webView != null &&
+            webView.canGoBack()) {
+
+            webView.goBack();
+
+        } else {
+
+            super.onBackPressed();
+
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+
+        if (webView != null) {
+
+            webView.destroy();
+
+        }
+
+        super.onDestroy();
+    }
+}
+EOF
+
+
+      # ==========================================================
+      # 17. SETUP GRADLE 8.13
+      # ==========================================================
+
+      - name: Setup Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-disabled: true
+
+
+      # ==========================================================
+      # 18. CREATE GRADLE WRAPPER
+      # ==========================================================
+
+      - name: Create Gradle Wrapper
+        shell: bash
+        working-directory: android
+        run: |
+
+          set -e
+
+          gradle wrapper \
+            --gradle-version 8.13 \
+            --distribution-type bin
+
+          chmod +x gradlew
+
+          ./gradlew --version
+
+
+      # ==========================================================
+      # 19. BUILD APK
+      # ==========================================================
+
+      - name: Build Debug APK
+        shell: bash
+        working-directory: android
+        run: |
+
+          set -e
+
+          echo "=============================================="
+          echo "BUILDING SKILLED INDIAN PROVIDER APK"
+          echo "=============================================="
+
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+          echo ""
+          echo "APK BUILD FINISHED."
+
+
+      # ==========================================================
+      # 20. VERIFY APK
+      # ==========================================================
+
+      - name: Verify APK
+        shell: bash
+        run: |
+
+          set -e
+
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+
+            echo "ERROR: APK WAS NOT CREATED."
+
+            find android \
+              -type f \
+              -name "*.apk" \
+              -print || true
+
+            exit 1
+
+          fi
+
+          echo "APK successfully created."
+
+          ls -lh "$APK"
+
+
+      # ==========================================================
+      # 21. RENAME APK
+      # ==========================================================
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+
+          set -e
+
+          mkdir -p apk-output
+
+          cp \
+            android/app/build/outputs/apk/debug/app-debug.apk \
+            apk-output/Skilled-Indian-Provider.apk
+
+          ls -lh \
+            apk-output/Skilled-Indian-Provider.apk
+
+
+      # ==========================================================
+      # 22. UPLOAD APK
+      # ==========================================================
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Skilled-Indian-Provider-APK
+          path: apk-output/Skilled-Indian-Provider.apk
+          if-no-files-found: error
+
+
+      # ==========================================================
+      # 23. SUCCESS
+      # ==========================================================
+
+      - name: Build Complete
+        run: |
+
+          echo ""
+          echo "=============================================="
+          echo "BUILD SUCCESSFUL"
+          echo "=============================================="
+          echo ""
+          echo "APK:"
+          echo "Skilled-Indian-Provider.apk"
+          echo ""
+          echo "Go to:"
+          echo "Actions -> This workflow run -> Artifacts"
+          echo ""
+          echo "=============================================="
