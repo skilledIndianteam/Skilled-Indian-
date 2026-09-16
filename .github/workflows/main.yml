@@ -1,4 +1,4 @@
-name: Deploy Apk to GitHub Pages
+name: Build Android Apk
 
 on:
   push:
